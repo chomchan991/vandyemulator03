@@ -1,0 +1,1038 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Device Screen Emulator</title>
+    <style>
+        /* --- Basic Setup & Layout --- */
+        :root {
+            --primary-color: #192a56;
+            --secondary-color: #273c75;
+            --highlight-color: #00a8ff;
+            --danger-color: #e84118;
+            --background-color: #ecf0f1;
+            --control-panel-width: 320px;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            background-color: var(--background-color);
+            color: var(--primary-color);
+            user-select: none;
+        }
+
+        /* --- Control Panel Styling --- */
+        #controls {
+            width: var(--control-panel-width);
+            background-color: #fff;
+            padding: 20px;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+            overflow-y: auto;
+            z-index: 1000;
+            position: sticky;
+            top: 0;
+            height: 100vh;
+            box-sizing: border-box;
+        }
+
+        #controls h2, #controls h3 {
+            margin-top: 0;
+            color: var(--primary-color);
+            border-bottom: 2px solid var(--background-color);
+            padding-bottom: 10px;
+        }
+
+        .control-group {
+            margin-bottom: 25px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            font-size: 0.9em;
+        }
+
+        button, input, select {
+            width: 100%;
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #bdc3c7;
+            box-sizing: border-box;
+            font-size: 1em;
+        }
+        
+        button {
+            background-color: var(--highlight-color);
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        
+        button:disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+        }
+
+        button:hover:not(:disabled) {
+            background-color: #0097e6;
+        }
+
+        #delete-item-btn, #remove-background-btn {
+            background-color: var(--danger-color);
+        }
+        #delete-item-btn:hover:not(:disabled), #remove-background-btn:hover:not(:disabled) {
+            background-color: #c23616;
+        }
+        
+        .device-switcher button, #rotate-device {
+            margin-bottom: 8px;
+            background-color: var(--secondary-color);
+        }
+
+        .device-switcher button.active {
+            background-color: var(--highlight-color);
+            font-weight: bold;
+        }
+        
+        #item-controls {
+            border-top: 2px solid var(--background-color);
+            margin-top: 20px;
+            padding-top: 20px;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+        
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .slider-container input[type="range"] {
+            flex-grow: 1;
+        }
+        
+        .slider-container span {
+            min-width: 45px;
+            text-align: right;
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        .button-pair {
+            display: flex;
+            gap: 10px;
+        }
+        
+        /* --- Display Area & Emulators --- */
+        #display-area {
+            flex-grow: 1;
+            padding: 20px;
+            background-color: var(--primary-color);
+            position: relative;
+            min-height: 100vh; 
+            --background-opacity: 1;
+        }
+
+        #display-area::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-image: var(--background-image);
+            background-size: var(--background-size, cover);
+            background-position: var(--background-position, center);
+            background-repeat: var(--background-repeat, no-repeat);
+            z-index: 0;
+            opacity: var(--background-opacity);
+            transition: opacity 0.2s;
+        }
+
+        #background-video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            z-index: 1;
+            display: none;
+            opacity: var(--background-opacity);
+            transition: opacity 0.2s;
+        }
+        
+        .device-wrapper {
+            position: absolute;
+            top: 0;
+            left: 0;
+            transform-style: preserve-3d;
+            transition: transform 0.2s ease-out;
+            z-index: 10;
+        }
+        .device-wrapper.dragging {
+            transition: none;
+            z-index: 20;
+        }
+
+        .device-frame {
+            background-color: #111;
+            border-radius: 40px;
+            box-shadow: 0 0 30px rgba(0,0,0,0.5), inset 0 0 10px rgba(255,255,255,0.1);
+            padding: 15px;
+            box-sizing: border-box;
+            cursor: grab;
+            transition: transform 0.2s ease-out;
+            transform-style: preserve-3d;
+            backface-visibility: hidden;
+        }
+
+        .device-frame.dragging {
+            transition: none; 
+        }
+        
+        .device-frame .screen {
+            background-color: white; 
+            width: 100%;
+            height: 100%;
+            border-radius: 25px;
+            overflow: hidden;
+            position: relative;
+            backface-visibility: hidden;
+        }
+        
+        #iphone { width: 375px; height: 812px; }
+        #iphone.landscape { width: 812px; height: 375px; }
+
+        #android { width: 412px; height: 915px; border-radius: 20px; padding: 12px; }
+        #android .screen { border-radius: 12px; }
+        #android.landscape { width: 915px; height: 412px; }
+
+        #ipad { width: 820px; height: 1180px; }
+        #ipad.landscape { width: 1180px; height: 820px; }
+
+        #smart-tv, #digital-display, #menu-board {
+            background: #222;
+            border-radius: 20px;
+            padding: 25px;
+        }
+        #smart-tv .screen, #digital-display .screen, #menu-board .screen { border-radius: 5px; }
+        
+        #smart-tv { width: 1280px; height: 720px; }
+        #smart-tv.portrait { width: 720px; height: 1280px; }
+
+        #smart-tv::after {
+            content: ''; position: absolute; bottom: -50px; left: 50%;
+            transform: translateX(-50%); width: 250px; height: 50px;
+            background: #1a1a1a; border-bottom-left-radius: 10px; border-bottom-right-radius: 10px;
+        }
+        
+        #digital-display { width: 450px; height: 800px; }
+        #digital-display.landscape { width: 800px; height: 450px; }
+
+        #digital-display::after {
+            content: ''; position: absolute; bottom: -150px; left: 50%;
+            transform: translateX(-50%); width: 300px; height: 150px;
+            background: #1a1a1a; border-radius: 10px;
+        }
+
+        #menu-board {
+            width: 1024px;
+            height: 576px;
+        }
+        #menu-board.portrait {
+            width: 576px;
+            height: 1024px;
+        }
+
+        /* Chalkboard Menu Stand with Umbrella Base */
+        #menu-stand {
+            width: 480px;
+            height: 854px;
+            background: #5d4037; /* Wood color */
+            padding: 20px;
+            border-radius: 15px;
+            position: relative;
+            transform-style: preserve-3d;
+        }
+        #menu-stand .screen {
+            border-radius: 5px;
+            border: 8px solid #3e2723; /* Darker wood border */
+            background-color: #2c3e50; /* Chalkboard color */
+        }
+        #menu-stand.landscape {
+            width: 854px;
+            height: 480px;
+        }
+
+        /* 3D Pole */
+        #menu-stand::before {
+            content: '';
+            position: absolute;
+            left: 50%;
+            bottom: -150px;
+            transform: translateX(-50%);
+            width: 60px;
+            height: 150px;
+            background: linear-gradient(90deg, #333 0%, #888 15%, #aaa 50%, #888 85%, #333 100%);
+            border-radius: 10px 10px 0 0;
+            z-index: -1;
+        }
+
+        /* Umbrella Base */
+        #menu-stand::after {
+            content: '';
+            position: absolute;
+            left: 50%;
+            bottom: -180px;
+            transform: translateX(-50%);
+            width: 300px;
+            height: 40px;
+            background: #212121;
+            border-radius: 50%;
+            border-top: 5px solid #424242;
+            box-shadow: 0 10px 15px rgba(0,0,0,0.4);
+            z-index: -2;
+        }
+        
+        #iframe-canvas-shared {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            overflow: hidden;
+            z-index: 15;
+        }
+        
+        #iframe-canvas-shared > .item-container {
+            pointer-events: auto;
+        }
+
+        .item-container {
+            position: absolute;
+            cursor: grab;
+            width: 200px;
+        }
+        
+        .item-container.selected {
+            outline: 2px dashed var(--highlight-color);
+            z-index: 999 !important;
+        }
+        
+        .item-container img {
+            pointer-events: none;
+        }
+        
+        .item-container img, .item-container iframe {
+            width: 100%;
+            height: 100%;
+            display: block;
+            border: none;
+        }
+        
+        /* --- Animations --- */
+        .item-container {
+            animation-iteration-count: infinite;
+            animation-timing-function: linear;
+            transform-origin: center center;
+        }
+        
+        @keyframes grow { 0%, 100% { transform: scale(var(--scale, 1)); } 50% { transform: scale(calc(var(--scale, 1) * 1.1)); } }
+        .anim-grow { animation-name: grow; animation-timing-function: ease-in-out; }
+
+        @keyframes heartbeat { 0% {transform: scale(var(--scale, 1));} 10% {transform: scale(calc(var(--scale, 1) * 0.9));} 17% {transform: scale(var(--scale, 1));} 25% {transform: scale(calc(var(--scale, 1) * 0.9));} 45% {transform: scale(calc(var(--scale, 1) * 1.1));} 100% {transform: scale(var(--scale, 1));} }
+        .anim-heartbeat { animation-name: heartbeat; animation-timing-function: ease-in-out; }
+
+        .anim-swinging { animation-name: swinging; transform-origin: top center; animation-timing-function: ease-in-out; animation-direction: alternate;}
+        @keyframes swinging { 0% { transform: rotateZ(10deg) scale(var(--scale, 1)); } 100% { transform: rotateZ(-10deg) scale(var(--scale, 1)); } }
+
+        .anim-tree-swinging { animation-name: tree-swinging; transform-origin: top center; animation-timing-function: ease-in-out; animation-direction: alternate;}
+        @keyframes tree-swinging { 0% { transform: rotateZ(2deg) scale(var(--scale, 1)); } 100% { transform: rotateZ(-2deg) scale(var(--scale, 1)); } }
+        
+        .anim-swinging-bottom { animation-name: swinging-bottom; transform-origin: bottom center; animation-timing-function: ease-in-out; animation-direction: alternate;}
+        @keyframes swinging-bottom { 0% { transform: rotateZ(10deg) scale(var(--scale, 1)); } 100% { transform: rotateZ(-10deg) scale(var(--scale, 1)); } }
+
+        .anim-ping-pong { animation-name: ping-pong; animation-direction: alternate; }
+        @keyframes ping-pong { 0% { transform: translateY(-20px) scale(var(--scale, 1)); } 100% { transform: translateY(20px) scale(var(--scale, 1)); } }
+
+        @keyframes pop-up { 0% {transform: scale(calc(var(--scale, 1) * 0.5)); opacity: 0;} 50% {transform: scale(calc(var(--scale, 1) * 1.05));} 70% {transform: scale(calc(var(--scale, 1) * 0.9));} 100% {transform: scale(var(--scale, 1)); opacity: 1;} }
+        .anim-pop-up { animation-name: pop-up; animation-timing-function: cubic-bezier(0.25, 0.46, 0.45, 0.94); }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <div class="control-group">
+            <h3>Actions</h3>
+            <div class="button-pair">
+                <button id="undo-btn">Undo</button>
+                <button id="redo-btn">Redo</button>
+            </div>
+        </div>
+        
+        <h2>Emulator Controls</h2>
+        <div class="control-group">
+            <h3>1. Add Content</h3>
+            <label for="image-loader">Upload Image (to Scene)</label>
+            <input type="file" id="image-loader" accept="image/*" style="margin-bottom: 15px;">
+
+            <label for="url-loader">Add URL (to Emulator Screen)</label>
+            <input type="text" id="url-input" placeholder="https://example.com">
+            <button id="load-url-btn" style="margin-top: 8px;">Load Content</button>
+
+            <label for="youtube-url-input" style="margin-top: 15px;">Add YouTube Video (to Emulator Screen)</label>
+            <input type="text" id="youtube-url-input" placeholder="Paste YouTube URL here">
+            <button id="load-youtube-btn" style="margin-top: 8px;">Load YouTube Video</button>
+        </div>
+        <div class="control-group">
+            <h3>2. Device Settings</h3>
+            <label>Select Device</label>
+            <div class="device-switcher">
+                <button data-device="iphone" class="active">iPhone</button>
+                <button data-device="android">Android</button>
+                <button data-device="ipad">iPad</button>
+                <button data-device="smart-tv">Smart TV 43"</button>
+                <button data-device="digital-display">Digital Display</button>
+                <button data-device="menu-board">Menu Board</button>
+                <button data-device="menu-stand">Menu Stand</button>
+            </div>
+            <button id="rotate-device" style="margin-top: 15px;">Rotate Screen</button>
+
+            <div style="margin-top: 15px; border-top: 2px solid var(--background-color); padding-top: 15px;">
+                <label for="device-rotate-y-slider">3D Perspective Rotate (Y-axis)</label>
+                <div class="slider-container">
+                    <span>-80°</span>
+                    <input type="range" id="device-rotate-y-slider" min="-80" max="80" value="0">
+                    <span>80°</span>
+                </div>
+                 <div style="text-align: center; font-family: monospace; margin-top: 5px;" id="device-rotate-y-value">0°</div>
+            </div>
+        </div>
+        
+        <div class="control-group">
+            <h3>3. Scene Settings</h3>
+            <label for="background-loader">Change Background (Image/Video)</label>
+            <input type="file" id="background-loader" accept="image/*,video/*" style="margin-bottom: 10px;">
+            <button id="remove-background-btn" style="margin-bottom: 15px;">Remove Background</button>
+            
+            <label for="background-opacity-slider">Background Opacity</label>
+            <div class="slider-container">
+                <span>0%</span>
+                <input type="range" id="background-opacity-slider" min="0" max="1" value="1" step="0.05">
+                <span>100%</span>
+            </div>
+        </div>
+        
+        <div id="item-controls" class="hidden">
+            <h3>4. Edit Selected Item</h3>
+            <div id="image-only-controls">
+                <div class="control-group">
+                    <label>Scale</label>
+                    <div class="slider-container"><span>0.1x</span><input type="range" id="scale-slider" min="0.1" max="5" value="1" step="0.1"><span>5.0x</span></div>
+                </div>
+                 <div class="control-group">
+                    <label>Layering</label>
+                    <div class="button-pair">
+                        <button id="send-behind-device">Send Behind Device</button>
+                        <button id="send-in-front-of-device">Bring in Front of Device</button>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>Rotation</label>
+                    <div class="slider-container"><span>X:</span><input type="range" id="rotate-x" min="-180" max="180" value="0"><span id="rotate-x-value">0°</span></div>
+                    <div class="slider-container"><span>Y:</span><input type="range" id="rotate-y" min="-180" max="180" value="0"><span id="rotate-y-value">0°</span></div>
+                    <div class="slider-container"><span>Z:</span><input type="range" id="rotate-z" min="-180" max="180" value="0"><span id="rotate-z-value">0°</span></div>
+                </div>
+                <div class="control-group">
+                    <label for="animation-select">Animation Style</label>
+                    <select id="animation-select">
+                        <option value="none">None</option>
+                        <option value="anim-grow">Grow</option>
+                        <option value="anim-heartbeat">Heartbeat</option>
+                        <option value="anim-swinging">Swinging</option>
+                        <option value="anim-tree-swinging">Tree Swinging</option>
+                        <option value="anim-swinging-bottom">Tree Swinging (Bottom)</option>
+                        <option value="anim-ping-pong">Ping Pong</option>
+                        <option value="anim-pop-up">Pop Up</option>
+                    </select>
+                </div>
+                 <div class="control-group">
+                    <label for="animation-speed">Animation Speed</label>
+                    <div class="slider-container"><span>1s</span><input type="range" id="animation-speed" min="1" max="10" value="2" step="0.1"><span>10s</span></div>
+                </div>
+                <div class="control-group"><button id="delete-item-btn">Delete Item</button></div>
+            </div>
+        </div>
+    </div>
+    <div id="display-area">
+        <video id="background-video" autoplay muted loop playsinline></video>
+        <div class="device-wrapper">
+            <div id="iphone" class="device-frame"><div class="screen"><div id="iframe-canvas-shared"></div></div></div>
+        </div>
+        <div class="device-wrapper hidden">
+            <div id="android" class="device-frame"><div class="screen"></div></div>
+        </div>
+        <div class="device-wrapper hidden">
+            <div id="ipad" class="device-frame"><div class="screen"></div></div>
+        </div>
+        <div class="device-wrapper hidden">
+             <div id="smart-tv" class="device-frame"><div class="screen"></div></div>
+        </div>
+        <div class="device-wrapper hidden">
+            <div id="digital-display" class="device-frame"><div class="screen"></div></div>
+        </div>
+        <div class="device-wrapper hidden">
+            <div id="menu-board" class="device-frame"><div class="screen"></div></div>
+        </div>
+        <div class="device-wrapper hidden">
+            <div id="menu-stand" class="device-frame"><div class="screen"></div></div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const displayArea = document.getElementById('display-area');
+            const iframeCanvasShared = document.getElementById('iframe-canvas-shared');
+            const imageLoader = document.getElementById('image-loader');
+            const urlInput = document.getElementById('url-input');
+            const loadUrlBtn = document.getElementById('load-url-btn');
+            const youtubeUrlInput = document.getElementById('youtube-url-input');
+            const loadYoutubeBtn = document.getElementById('load-youtube-btn');
+            const rotateDeviceBtn = document.getElementById('rotate-device');
+            const deviceRotateYSlider = document.getElementById('device-rotate-y-slider');
+            const deviceRotateYValue = document.getElementById('device-rotate-y-value');
+            
+            const itemControls = document.getElementById('item-controls');
+            const deviceWrappers = document.querySelectorAll('.device-wrapper');
+            const deviceFrames = document.querySelectorAll('.device-frame');
+            const deviceButtons = document.querySelectorAll('.device-switcher button');
+            const scaleSlider = document.getElementById('scale-slider');
+            const deleteBtn = document.getElementById('delete-item-btn');
+            const rotateXSlider = document.getElementById('rotate-x');
+            const rotateYSlider = document.getElementById('rotate-y');
+            const rotateZSlider = document.getElementById('rotate-z');
+            const rotateXValue = document.getElementById('rotate-x-value');
+            const rotateYValue = document.getElementById('rotate-y-value');
+            const rotateZValue = document.getElementById('rotate-z-value');
+            const animationSelect = document.getElementById('animation-select');
+            const animationSpeedSlider = document.getElementById('animation-speed');
+            const sendBehindButton = document.getElementById('send-behind-device');
+            const sendInFrontButton = document.getElementById('send-in-front-of-device');
+            const backgroundLoader = document.getElementById('background-loader');
+            const removeBackgroundBtn = document.getElementById('remove-background-btn');
+            const backgroundVideo = document.getElementById('background-video');
+            const backgroundOpacitySlider = document.getElementById('background-opacity-slider');
+            const undoBtn = document.getElementById('undo-btn');
+            const redoBtn = document.getElementById('redo-btn');
+            let undoStack = [];
+            let redoStack = [];
+            let selectedItem = null;
+            let items = [];
+            let zIndexCounter = 20;
+
+            let activeDeviceState = { translateX: 0, translateY: 0, rotateY: 0 };
+
+            const captureState = () => {
+                const itemStates = items.map(item => ({...item, element: null, contentElement: null }));
+                const backgroundState = {
+                    image: displayArea.style.getPropertyValue('--background-image'),
+                    size: displayArea.style.getPropertyValue('--background-size'),
+                    repeat: displayArea.style.getPropertyValue('--background-repeat'),
+                    videoSrc: backgroundVideo.src,
+                    opacity: backgroundOpacitySlider.value
+                };
+                const activeDevice = document.querySelector('.device-frame:not(.hidden)');
+                const deviceState = {
+                    id: activeDevice.id,
+                    isLandscape: activeDevice.classList.contains('landscape') || activeDevice.classList.contains('portrait'),
+                    orientationClass: activeDevice.classList.contains('landscape') ? 'landscape' : (activeDevice.classList.contains('portrait') ? 'portrait' : ''),
+                    transform: { ...activeDeviceState } 
+                };
+                return { items: itemStates, background: backgroundState, device: deviceState, zIndexCounter: zIndexCounter };
+            };
+
+            const restoreState = (state) => {
+                if (!state) return;
+                
+                document.querySelectorAll('.item-container').forEach(el => el.remove());
+                items = [];
+                zIndexCounter = state.zIndexCounter;
+                state.items.forEach(itemState => createItem(itemState.type, itemState.src, itemState, false));
+                deselectAll();
+
+                backgroundVideo.style.display = 'none';
+                backgroundVideo.pause();
+                if (state.background.videoSrc) {
+                    backgroundVideo.src = state.background.videoSrc;
+                    backgroundVideo.style.display = 'block';
+                }
+                displayArea.style.setProperty('--background-image', state.background.image);
+                displayArea.style.setProperty('--background-size', state.background.size);
+                displayArea.style.setProperty('--background-repeat', state.background.repeat);
+                backgroundOpacitySlider.value = state.background.opacity;
+                setBackgroundOpacity(state.background.opacity, false);
+
+                deviceWrappers.forEach(wrapper => wrapper.classList.add('hidden'));
+                deviceFrames.forEach(frame => {
+                    frame.classList.remove('landscape', 'portrait');
+                    frame.style.transform = '';
+                });
+
+                const deviceToShow = document.getElementById(state.device.id);
+                deviceToShow.parentElement.classList.remove('hidden');
+
+                const screenOfDevice = deviceToShow.querySelector('.screen');
+                if (screenOfDevice) screenOfDevice.appendChild(iframeCanvasShared);
+
+                if (state.device.isLandscape) {
+                    deviceToShow.classList.add(state.device.orientationClass);
+                }
+                deviceButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.device === state.device.id));
+                
+                activeDeviceState = { ...state.device.transform };
+                deviceRotateYSlider.value = activeDeviceState.rotateY || 0;
+                applyDeviceTransform(); 
+            };
+
+            const saveState = () => {
+                redoStack = []; 
+                undoStack.push(captureState());
+                updateUndoRedoButtons();
+            };
+
+            const undo = () => {
+                if (undoStack.length <= 1) return;
+                redoStack.push(undoStack.pop());
+                restoreState(undoStack[undoStack.length - 1]);
+                updateUndoRedoButtons();
+            };
+            
+            const redo = () => {
+                if (redoStack.length === 0) return;
+                const nextState = redoStack.pop();
+                undoStack.push(nextState);
+                restoreState(nextState);
+                updateUndoRedoButtons();
+            };
+            
+            const updateUndoRedoButtons = () => {
+                undoBtn.disabled = undoStack.length <= 1;
+                redoBtn.disabled = redoStack.length === 0;
+            };
+            
+            function centerActiveDevice() {
+                const activeWrapper = document.querySelector('.device-wrapper:not(.hidden)');
+                if (!activeWrapper) return;
+                const activeDevice = activeWrapper.querySelector('.device-frame');
+                
+                const displayRect = displayArea.getBoundingClientRect();
+                const deviceRect = activeDevice.getBoundingClientRect();
+
+                activeDeviceState.translateX = (displayRect.width - deviceRect.width) / 2;
+                activeDeviceState.translateY = (displayRect.height - deviceRect.height) / 2;
+                
+                applyDeviceTransform();
+            }
+
+            function switchDevice(e) {
+                const targetDeviceId = e.target.dataset.device;
+                const activeWrapper = document.querySelector('.device-wrapper:not(.hidden)');
+                if (activeWrapper && activeWrapper.querySelector('.device-frame').id === targetDeviceId) return;
+                
+                if (activeWrapper) {
+                    activeWrapper.style.transform = '';
+                    activeWrapper.classList.add('hidden');
+                }
+                
+                const newDevice = document.getElementById(targetDeviceId);
+                const newWrapper = newDevice.parentElement;
+                const newScreen = newDevice.querySelector('.screen');
+                // Ensure correct screen color for all devices
+                if (newDevice.id === 'menu-stand') {
+                    newScreen.style.backgroundColor = '#2c3e50';
+                } else {
+                    newScreen.style.backgroundColor = 'white';
+                }
+                newScreen.appendChild(iframeCanvasShared);
+
+                newWrapper.classList.remove('hidden');
+                deviceButtons.forEach(btn => btn.classList.remove('active'));
+                e.target.classList.add('active');
+                
+                deviceRotateYSlider.value = 0;
+                activeDeviceState.rotateY = 0;
+
+                setTimeout(() => {
+                    centerActiveDevice();
+                    saveState();
+                }, 0);
+
+                deselectAll();
+            }
+
+            function rotateActiveDevice() {
+                const activeWrapper = document.querySelector('.device-wrapper:not(.hidden)');
+                if (!activeWrapper) return;
+                const activeDevice = activeWrapper.querySelector('.device-frame');
+                
+                deviceRotateYSlider.value = 0;
+                activeDeviceState.rotateY = 0;
+                let classToToggle = 'landscape';
+                if (activeDevice.id === 'smart-tv' || activeDevice.id === 'menu-board') {
+                    classToToggle = 'portrait';
+                }
+                activeDevice.classList.toggle(classToToggle);
+                 
+                setTimeout(() => {
+                    centerActiveDevice();
+                    saveState();
+                }, 0);
+            }
+            
+            function applyDeviceTransform() {
+                const activeWrapper = document.querySelector('.device-wrapper:not(.hidden)');
+                if (!activeWrapper) return;
+
+                const activeDevice = activeWrapper.querySelector('.device-frame');
+                const { translateX, translateY, rotateY } = activeDeviceState;
+                deviceRotateYValue.textContent = `${rotateY}°`;
+                
+                activeWrapper.style.transform = `perspective(2000px) translateX(${translateX}px) translateY(${translateY}px)`;
+                activeDevice.style.transform = `rotateY(${rotateY}deg)`;
+            }
+
+            function handleImageUpload(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => createItem('image', event.target.result);
+                    reader.readAsDataURL(file);
+                }
+                e.target.value = '';
+            }
+
+            function handleUrlLoad() {
+                const url = urlInput.value.trim();
+                if (url) createItem('iframe', convertToEmbedUrl(url));
+                urlInput.value = '';
+            }
+            
+            function handleYouTubeLoad() {
+                const url = youtubeUrlInput.value.trim();
+                if (url) {
+                    const embedUrl = convertToEmbedUrl(url);
+                    if (embedUrl.includes('youtube') || embedUrl.includes('youtu.be')) {
+                        createItem('iframe', embedUrl);
+                    } else {
+                        alert("Please paste a valid YouTube video URL (Watch Link, Short, or Embed).");
+                    }
+                }
+                youtubeUrlInput.value = '';
+            }
+            
+            function handleBackgroundChange(e) {
+                const file = e.target.files[0];
+                if (!file) return;
+                handleRemoveBackground(false);
+                const objectURL = URL.createObjectURL(file);
+                if (file.type.startsWith('video/')) {
+                    backgroundVideo.src = objectURL;
+                    backgroundVideo.style.display = 'block';
+                } else if (file.type.startsWith('image/')) {
+                    displayArea.style.setProperty('--background-image', `url(${objectURL})`);
+                    displayArea.style.setProperty('--background-size', 'cover');
+                    displayArea.style.setProperty('--background-repeat', 'no-repeat');
+                }
+                e.target.value = '';
+                saveState();
+            }
+
+            function handleRemoveBackground(shouldSaveState = true) {
+                displayArea.style.setProperty('--background-image', '');
+                displayArea.style.setProperty('--background-size', '');
+                displayArea.style.setProperty('--background-repeat', '');
+                backgroundVideo.style.display = 'none';
+                backgroundVideo.pause();
+                if (backgroundVideo.src) URL.revokeObjectURL(backgroundVideo.src);
+                backgroundVideo.removeAttribute('src');
+                backgroundOpacitySlider.value = 1;
+                setBackgroundOpacity(1, false);
+                if (shouldSaveState) saveState();
+            }
+
+            function createItem(type, contentSrc, initialState = null, shouldSaveState = true) {
+                const parentElement = (type === 'image') ? displayArea : iframeCanvasShared;
+                
+                const itemData = initialState ? { ...initialState } : {
+                    id: `item-${Date.now()}`, type: type, src: contentSrc,
+                    left: 20, 
+                    top: (parentElement.getBoundingClientRect().top < 0 ? -parentElement.getBoundingClientRect().top : 0) + 20,
+                    scale: 1, rotateX: 0, rotateY: 0, rotateZ: 0,
+                    animationClass: 'none', animationSpeed: 2,
+                    zIndex: zIndexCounter++
+                };
+                
+                const container = document.createElement('div');
+                container.className = 'item-container';
+                container.id = itemData.id;
+                let contentElement;
+                if (type === 'image') {
+                    contentElement = document.createElement('img');
+                } else {
+                    contentElement = document.createElement('iframe');
+                    contentElement.setAttribute('allowfullscreen', '');
+                    // Add referrerpolicy to try and fix local file issues
+                    contentElement.setAttribute('referrerpolicy', 'no-referrer');
+                    contentElement.setAttribute('allow', 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture');
+                    container.style.width = '100%'; container.style.height = '100%';
+                    itemData.left = 0;
+                    itemData.top = 0;
+                }
+                contentElement.src = itemData.src || contentSrc;
+                container.appendChild(contentElement);
+                parentElement.appendChild(container);
+                itemData.element = container;
+                itemData.contentElement = contentElement;
+                itemData.parent = parentElement;
+                
+                items.push(itemData);
+                if (shouldSaveState) saveState();
+
+                if(type === 'image') makeItemDraggable(itemData);
+                applyItemTransforms(itemData);
+                selectItem(itemData);
+            }
+            
+            function deviceDragHandler(e) {
+                const deviceFrame = e.target.closest('.device-frame');
+                if (!deviceFrame || e.target.closest('.screen, .item-container')) {
+                    return;
+                }
+                const deviceWrapper = deviceFrame.parentElement;
+                if (deviceWrapper.classList.contains('hidden')) {
+                    return;
+                }
+                
+                e.preventDefault();
+                deviceWrapper.classList.add('dragging');
+                deviceFrame.classList.add('dragging');
+
+                let startX = e.pageX;
+                let startY = e.pageY;
+                let startTranslateX = activeDeviceState.translateX;
+                let startTranslateY = activeDeviceState.translateY;
+
+                function onMouseMove(moveEvent) {
+                    const dx = moveEvent.pageX - startX;
+                    const dy = moveEvent.pageY - startY;
+                    activeDeviceState.translateX = startTranslateX + dx;
+                    activeDeviceState.translateY = startTranslateY + dy;
+                    applyDeviceTransform();
+                }
+
+                function onMouseUp() {
+                    deviceWrapper.classList.remove('dragging');
+                    deviceFrame.classList.remove('dragging');
+                    document.removeEventListener('mousemove', onMouseMove);
+                    document.removeEventListener('mouseup', onMouseUp);
+                    saveState();
+                }
+
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+            }
+            
+            function makeItemDraggable(itemData) {
+                let startX, startY, startLeft, startTop;
+                const onMouseDown = (e) => {
+                    e.stopPropagation();
+                    selectItem(itemData);
+                    startX = e.pageX;
+                    startY = e.pageY;
+                    startLeft = itemData.left;
+                    startTop = itemData.top;
+                    document.addEventListener('mousemove', onMouseMove);
+                    document.addEventListener('mouseup', onMouseUp);
+                };
+                const onMouseMove = (e) => {
+                    const dx = e.pageX - startX;
+                    const dy = e.pageY - startY;
+                    itemData.left = startLeft + dx;
+                    itemData.top = startTop + dy;
+                    applyItemTransforms(itemData);
+                };
+                const onMouseUp = () => {
+                    document.removeEventListener('mousemove', onMouseMove);
+                    document.removeEventListener('mouseup', onMouseUp);
+                    saveState();
+                };
+                itemData.element.addEventListener('mousedown', onMouseDown);
+            }
+
+            function selectItem(itemData) {
+                deselectAll();
+                selectedItem = itemData;
+                itemData.element.classList.add('selected');
+                if (itemData.type === 'image') {
+                    itemControls.classList.remove('hidden');
+                    updateControlsUI(itemData);
+                }
+            }
+            
+            function deselectAll() {
+                if (selectedItem) selectedItem.element.classList.remove('selected');
+                selectedItem = null;
+                itemControls.classList.add('hidden');
+            }
+
+            function updateControlsUI(itemData) {
+                if (itemData.type !== 'image') return;
+                scaleSlider.value = itemData.scale;
+                rotateXSlider.value = itemData.rotateX;
+                rotateYSlider.value = itemData.rotateY;
+                rotateZSlider.value = itemData.rotateZ;
+                rotateXValue.textContent = `${itemData.rotateX}°`;
+                rotateYValue.textContent = `${itemData.rotateY}°`;
+                rotateZValue.textContent = `${itemData.rotateZ}°`;
+                animationSelect.value = itemData.animationClass;
+                animationSpeedSlider.value = itemData.animationSpeed;
+            }
+            
+            function updateSelectedItem() {
+                if (!selectedItem || selectedItem.type !== 'image') return;
+                selectedItem.scale = scaleSlider.value;
+                selectedItem.rotateX = rotateXSlider.value;
+                selectedItem.rotateY = rotateYSlider.value;
+                selectedItem.rotateZ = rotateZSlider.value;
+                selectedItem.animationClass = animationSelect.value;
+                selectedItem.animationSpeed = animationSpeedSlider.value;
+                rotateXValue.textContent = `${selectedItem.rotateX}°`;
+                rotateYValue.textContent = `${selectedItem.rotateY}°`;
+                rotateZValue.textContent = `${selectedItem.rotateZ}°`;
+                applyItemTransforms(selectedItem);
+                applyAnimation(selectedItem);
+            }
+
+            function deleteSelectedItem() {
+                if (!selectedItem) return;
+                selectedItem.element.remove();
+                items = items.filter(item => item.id !== selectedItem.id);
+                deselectAll();
+                saveState();
+            }
+
+            function applyItemTransforms(itemData) {
+                const { element, left, top, scale, rotateX, rotateY, rotateZ, zIndex } = itemData;
+                element.style.left = `${left}px`;
+                element.style.top = `${top}px`;
+                element.style.zIndex = zIndex;
+                element.style.setProperty('--scale', scale);
+                element.style.transform = `scale(${scale}) rotateX(${rotateX}deg) rotateY(${rotateY}deg) rotateZ(${rotateZ}deg)`;
+            }
+            
+            function applyAnimation(itemData) {
+                const { element, animationClass, animationSpeed } = itemData;
+                let classes = ['item-container'];
+                if (selectedItem?.id === itemData.id) classes.push('selected');
+                element.className = classes.join(' ');
+                if (animationClass !== 'none') {
+                    element.style.animationName = '';
+                    element.classList.add(animationClass);
+                    element.style.animationDuration = `${animationSpeed}s`;
+                } else {
+                    element.style.animationName = 'none';
+                }
+            }
+
+            /* --- UPDATED: Use youtube-nocookie to bypass strict origin checks --- */
+            function convertToEmbedUrl(url) {
+                let videoId = null;
+
+                // 1. Handle Shorts
+                if (url.includes('youtube.com/shorts/')) {
+                    videoId = url.split('shorts/')[1].split('?')[0];
+                } 
+                // 2. Handle standard/share/mobile links
+                else {
+                    const youtubeRegex = /^(?:https?:\/\/)?(?:www\.|m\.)?(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})(?:[\?&].*)?$/;
+                    const match = url.match(youtubeRegex);
+                    if (match && match[1]) {
+                        videoId = match[1];
+                    }
+                }
+
+                if (videoId) {
+                    // Use youtube-nocookie.com and add parameters to reduce configuration errors
+                    return `https://www.youtube-nocookie.com/embed/${videoId}?rel=0&controls=1&showinfo=0`;
+                }
+
+                if (!url.startsWith('http')) return `https://${url}`;
+                return url;
+            }
+
+            function setBackgroundOpacity(value, shouldSaveState = true) {
+                displayArea.style.setProperty('--background-opacity', value);
+                if (shouldSaveState) saveState();
+            }
+
+            // --- Attach All Event Listeners ---
+            undoBtn.addEventListener('click', undo);
+            redoBtn.addEventListener('click', redo);
+            imageLoader.addEventListener('change', handleImageUpload);
+            loadUrlBtn.addEventListener('click', handleUrlLoad);
+            loadYoutubeBtn.addEventListener('click', handleYouTubeLoad);
+            rotateDeviceBtn.addEventListener('click', rotateActiveDevice);
+            deviceButtons.forEach(button => button.addEventListener('click', switchDevice));
+            
+            const sliders = [scaleSlider, rotateXSlider, rotateYSlider, rotateZSlider, animationSpeedSlider];
+            sliders.forEach(slider => {
+                slider.addEventListener('input', updateSelectedItem);
+                slider.addEventListener('change', saveState);
+            });
+            animationSelect.addEventListener('change', () => {
+                updateSelectedItem();
+                saveState();
+            });
+            deleteBtn.addEventListener('click', deleteSelectedItem);
+            
+            sendBehindButton.addEventListener('click', () => {
+                if (!selectedItem) return;
+                selectedItem.zIndex = 5; 
+                applyItemTransforms(selectedItem);
+                saveState();
+            });
+            sendInFrontButton.addEventListener('click', () => {
+                if (!selectedItem) return;
+                zIndexCounter++;
+                selectedItem.zIndex = zIndexCounter;
+                applyItemTransforms(selectedItem);
+                saveState();
+            });
+            
+            displayArea.addEventListener('mousedown', deviceDragHandler);
+            
+            displayArea.addEventListener('click', (e) => {
+                if (e.target.id === 'display-area' || e.target.classList.contains('screen') || e.target === displayArea) deselectAll();
+            });
+            backgroundLoader.addEventListener('change', handleBackgroundChange);
+            removeBackgroundBtn.addEventListener('click', () => handleRemoveBackground(true));
+            backgroundOpacitySlider.addEventListener('change', (e) => setBackgroundOpacity(e.target.value));
+            
+            deviceRotateYSlider.addEventListener('input', () => {
+                activeDeviceState.rotateY = deviceRotateYSlider.value;
+                applyDeviceTransform();
+            });
+            deviceRotateYSlider.addEventListener('change', saveState);
+
+            // --- Initial Setup ---
+            setTimeout(() => {
+                centerActiveDevice();
+                saveState();
+            }, 0);
+        });
+    </script>
+</body>
+</html>
